@@ -1,0 +1,252 @@
+{
+  "info": {
+    "name": "Milvus Vector DB API",
+    "description": "Milvus Vector Database CRUD API 테스트 컬렉션",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": ["{{base_url}}"],
+          "path": ["health"]
+        }
+      }
+    },
+    {
+      "name": "Collection Management",
+      "item": [
+        {
+          "name": "Create Collection (L2)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"collection_name\": \"documents_l2\",\n  \"dimension\": 384,\n  \"metric_type\": \"L2\",\n  \"schema_fields\": [\n    {\n      \"name\": \"title\",\n      \"type\": \"VARCHAR\",\n      \"max_length\": 100\n    },\n    {\n      \"name\": \"content\",\n      \"type\": \"VARCHAR\",\n      \"max_length\": 1000\n    },\n    {\n      \"name\": \"category\",\n      \"type\": \"VARCHAR\",\n      \"max_length\": 50\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/collection/create",
+              "host": ["{{base_url}}"],
+              "path": ["collection", "create"]
+            }
+          }
+        },
+        {
+          "name": "Create Collection (COSINE)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"collection_name\": \"documents_cosine\",\n  \"dimension\": 384,\n  \"metric_type\": \"COSINE\",\n  \"schema_fields\": [\n    {\n      \"name\": \"title\",\n      \"type\": \"VARCHAR\",\n      \"max_length\": 100\n    },\n    {\n      \"name\": \"content\",\n      \"type\": \"VARCHAR\",\n      \"max_length\": 1000\n    },\n    {\n      \"name\": \"category\",\n      \"type\": \"VARCHAR\",\n      \"max_length\": 50\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/collection/create",
+              "host": ["{{base_url}}"],
+              "path": ["collection", "create"]
+            }
+          }
+        },
+        {
+          "name": "Get Collection Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/collection/info/documents_l2",
+              "host": ["{{base_url}}"],
+              "path": ["collection", "info", "documents_l2"]
+            }
+          }
+        },
+        {
+          "name": "Get All Collections",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/collection/collections",
+              "host": ["{{base_url}}"],
+              "path": ["collection", "collections"]
+            }
+          }
+        },
+        {
+          "name": "Delete Collection",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"collection_name\": \"documents\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/collection/delete",
+              "host": ["{{base_url}}"],
+              "path": ["collection", "delete"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Vector Management",
+      "item": [
+        {
+          "name": "Insert Vectors",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"collection_name\": \"documents\",\n  \"data\": [\n    {\n      \"text\": \"인공지능과 머신러닝에 대한 문서입니다.\",\n      \"title\": \"AI 문서\",\n      \"content\": \"이 문서는 인공지능과 머신러닝에 대한 내용을 담고 있습니다.\",\n      \"category\": \"AI\"\n    },\n    {\n      \"text\": \"데이터베이스 시스템에 대한 문서입니다.\",\n      \"title\": \"DB 문서\",\n      \"content\": \"이 문서는 데이터베이스 시스템에 대한 내용을 담고 있습니다.\",\n      \"category\": \"Database\"\n    },\n    {\n      \"text\": \"웹 개발과 프론트엔드 기술에 대한 문서입니다.\",\n      \"title\": \"Web 개발 문서\",\n      \"content\": \"이 문서는 웹 개발과 프론트엔드 기술에 대한 내용을 담고 있습니다.\",\n      \"category\": \"Web\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/vector/insert",
+              "host": ["{{base_url}}"],
+              "path": ["vector", "insert"]
+            }
+          }
+        },
+        {
+          "name": "Get Vectors",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/vector/vectors?collection_name=documents&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["vector", "vectors"],
+              "query": [
+                {
+                  "key": "collection_name",
+                  "value": "documents"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Search Vectors - L2 Distance",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"collection_name\": \"documents_l2\",\n  \"query_text\": \"인공지능에 대해 알려주세요\",\n  \"search_params\": {\n    \"metric_type\": \"L2\",\n    \"params\": {\n      \"nprobe\": 10\n    }\n  },\n  \"limit\": 5\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/vector/search",
+              "host": ["{{base_url}}"],
+              "path": ["vector", "search"]
+            }
+          }
+        },
+        {
+          "name": "Search Vectors - Cosine Similarity",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"collection_name\": \"documents_cosine\",\n  \"query_text\": \"데이터베이스 시스템\",\n  \"search_params\": {\n    \"metric_type\": \"COSINE\",\n    \"params\": {\n      \"nprobe\": 10\n    }\n  },\n  \"limit\": 3\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/vector/search",
+              "host": ["{{base_url}}"],
+              "path": ["vector", "search"]
+            }
+          }
+        },
+        {
+          "name": "Search Vectors - Inner Product",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"collection_name\": \"documents\",\n  \"query_text\": \"웹 개발 기술\",\n  \"search_params\": {\n    \"metric_type\": \"IP\",\n    \"params\": {\n      \"nprobe\": 10\n    }\n  },\n  \"limit\": 3\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/vector/search",
+              "host": ["{{base_url}}"],
+              "path": ["vector", "search"]
+            }
+          }
+        },
+        {
+          "name": "Delete Vectors",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"collection_name\": \"documents\",\n  \"ids\": [1, 2, 3]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/vector/delete",
+              "host": ["{{base_url}}"],
+              "path": ["vector", "delete"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+} 

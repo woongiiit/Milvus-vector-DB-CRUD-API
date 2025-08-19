@@ -6,6 +6,7 @@ from pymilvus import connections, Collection, CollectionSchema, FieldSchema, Dat
 from transformers import AutoTokenizer, AutoModel
 import torch
 import os
+from Services.logger_config import get_milvus_logger, get_user_activity_logger
 
 
 def convert_numpy_types(obj):
@@ -26,24 +27,25 @@ def convert_numpy_types(obj):
 
 def convert_milvus_hit_entity(hit):
     """Milvus Hit Entity를 JSON 직렬화 가능한 형태로 변환"""
+    logger = get_milvus_logger()
     try:
         # hit.entity를 안전하게 변환
         entity_dict = {}
         if hasattr(hit, 'entity') and hit.entity:
-            print(f"📋 [ENTITY] hit.entity 타입: {type(hit.entity)}")
+            logger.info(f"📋 [ENTITY] hit.entity 타입: {type(hit.entity)}")
             
             # entity가 딕셔너리인 경우
             if isinstance(hit.entity, dict):
-                print(f"📋 [ENTITY] hit.entity 키들: {list(hit.entity.keys())}")
+                logger.info(f"📋 [ENTITY] hit.entity 키들: {list(hit.entity.keys())}")
                 for key, value in hit.entity.items():
                     try:
                         entity_dict[key] = convert_numpy_types(value)
                     except Exception as key_error:
-                        print(f"⚠️ [ENTITY] 키 '{key}' 변환 실패: {str(key_error)}")
+                        logger.warning(f"⚠️ [ENTITY] 키 '{key}' 변환 실패: {str(key_error)}")
                         entity_dict[key] = str(value)  # 문자열로 변환
             # entity가 다른 타입인 경우 (Hit 객체 등)
             else:
-                print(f"⚠️ [ENTITY] hit.entity가 딕셔너리가 아님: {type(hit.entity)}")
+                logger.warning(f"⚠️ [ENTITY] hit.entity가 딕셔너리가 아님: {type(hit.entity)}")
                 # Hit 객체의 속성들을 직접 확인
                 if hasattr(hit.entity, '__dict__'):
                     for attr_name, attr_value in hit.entity.__dict__.items():
@@ -51,7 +53,7 @@ def convert_milvus_hit_entity(hit):
                             try:
                                 entity_dict[attr_name] = convert_numpy_types(attr_value)
                             except Exception as attr_error:
-                                print(f"⚠️ [ENTITY] 속성 '{attr_name}' 변환 실패: {str(attr_error)}")
+                                logger.warning(f"⚠️ [ENTITY] 속성 '{attr_name}' 변환 실패: {str(attr_error)}")
                                 entity_dict[attr_name] = str(attr_value)
                 else:
                     entity_dict = {"raw_entity": str(hit.entity)}
@@ -63,7 +65,7 @@ def convert_milvus_hit_entity(hit):
         }
     except Exception as e:
         # 변환 실패 시 기본 정보만 반환
-        print(f"❌ [ENTITY] Entity 변환 중 오류: {str(e)}")
+        logger.error(f"❌ [ENTITY] Entity 변환 중 오류: {str(e)}")
         return {
             "id": getattr(hit, 'id', None),
             "distance": getattr(hit, 'distance', None),
@@ -77,6 +79,8 @@ class MilvusService:
         self.connection = None
         self.tokenizer = None
         self.model = None
+        self.logger = get_milvus_logger()
+        self.user_logger = get_user_activity_logger()
         self._initialize_connection()
         self._initialize_transformer()
     
@@ -93,9 +97,9 @@ class MilvusService:
             )
             # 연결 확인
             self.connection = connections
-            print(f"Milvus 연결 성공: {host}:{port}")
+            self.logger.info(f"🔗 [CONNECTION] Milvus 연결 성공: {host}:{port}")
         except Exception as e:
-            print(f"Milvus 연결 실패: {e}")
+            self.logger.error(f"❌ [CONNECTION] Milvus 연결 실패: {e}")
             raise
     
     def _initialize_transformer(self):
@@ -104,9 +108,9 @@ class MilvusService:
             model_name = "sentence-transformers/all-MiniLM-L6-v2"
             self.tokenizer = AutoTokenizer.from_pretrained(model_name)
             self.model = AutoModel.from_pretrained(model_name)
-            print(f"Transformer 모델 로드 성공: {model_name}")
+            self.logger.info(f"🤖 [TRANSFORMER] 모델 로드 성공: {model_name}")
         except Exception as e:
-            print(f"Transformer 모델 로드 실패: {e}")
+            self.logger.error(f"❌ [TRANSFORMER] 모델 로드 실패: {e}")
             raise
     
     async def text_to_vector(self, text: str, target_dimension: Optional[int] = None) -> List[float]:
@@ -119,25 +123,25 @@ class MilvusService:
                 embeddings = outputs.last_hidden_state.mean(dim=1)
                 vector = embeddings.squeeze().numpy().tolist()
             
-            print(f"원본 벡터 차원: {len(vector)}")
+            self.logger.info(f"📊 [VECTOR] 원본 벡터 차원: {len(vector)}")
             
             # target_dimension이 지정된 경우 벡터 차원 조정
             if target_dimension is not None:
-                print(f"목표 차원: {target_dimension}")
+                self.logger.info(f"📊 [VECTOR] 목표 차원: {target_dimension}")
                 if len(vector) > target_dimension:
                     # 차원이 큰 경우: 앞쪽부터 잘라내기
                     vector = vector[:target_dimension]
-                    print(f"벡터 차원 축소: {len(vector)}")
+                    self.logger.info(f"📊 [VECTOR] 벡터 차원 축소: {len(vector)}")
                 elif len(vector) < target_dimension:
                     # 차원이 작은 경우: 0으로 패딩
                     vector.extend([0.0] * (target_dimension - len(vector)))
-                    print(f"벡터 차원 확장: {len(vector)}")
+                    self.logger.info(f"📊 [VECTOR] 벡터 차원 확장: {len(vector)}")
                 else:
-                    print(f"벡터 차원 일치: {len(vector)}")
+                    self.logger.info(f"📊 [VECTOR] 벡터 차원 일치: {len(vector)}")
             
             return vector
         except Exception as e:
-            print(f"텍스트 벡터화 실패: {e}")
+            self.logger.error(f"❌ [VECTOR] 텍스트 벡터화 실패: {e}")
             raise
     
     async def create_collection(self, collection_name: str, dimension: int, 
@@ -145,28 +149,31 @@ class MilvusService:
                                index_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """컬렉션 생성 API - PyMilvus 2.6.0에서 원하는 인덱스 타입으로 직접 생성"""
         try:
-            print(f"📋 [CREATE] 컬렉션 생성 시작 - 컬렉션: {collection_name}")
+            # 사용자 행위 로깅
+            self.user_logger.info(f"👤 [USER_ACTION] 컬렉션 생성 요청 - 컬렉션명: {collection_name}, 차원: {dimension}, 메트릭: {metric_type}")
+            
+            self.logger.info(f"📋 [CREATE] 컬렉션 생성 시작 - 컬렉션: {collection_name}, 차원: {dimension}, 메트릭: {metric_type}")
             
             # 1단계: 컬렉션 존재 확인
-            print(f"📋 [CREATE] 1단계: 컬렉션 존재 확인")
+            self.logger.info(f"📋 [CREATE] 1단계: 컬렉션 존재 확인")
             if utility.has_collection(collection_name):
-                print(f"❌ [CREATE] 컬렉션 '{collection_name}'이 이미 존재함")
+                self.logger.warning(f"⚠️ [CREATE] 컬렉션 '{collection_name}'이 이미 존재함")
                 return {"success": False, "message": f"컬렉션 '{collection_name}'이 이미 존재합니다."}
-            print(f"✅ [CREATE] 컬렉션 '{collection_name}' 존재하지 않음 (생성 가능)")
+            self.logger.info(f"✅ [CREATE] 컬렉션 '{collection_name}' 존재하지 않음 (생성 가능)")
             
             # 2단계: 매개변수 검증 및 기본값 설정
-            print(f"📋 [CREATE] 2단계: 매개변수 검증 및 기본값 설정")
+            self.logger.info(f"📋 [CREATE] 2단계: 매개변수 검증 및 기본값 설정")
             
             # metric_type 검증
             valid_metric_types = ["L2", "IP", "COSINE"]
             if metric_type.upper() not in valid_metric_types:
-                print(f"❌ [CREATE] 지원하지 않는 metric_type: {metric_type}")
+                self.logger.error(f"❌ [CREATE] 지원하지 않는 metric_type: {metric_type}")
                 return {"success": False, "message": f"지원하지 않는 metric_type입니다. 지원되는 타입: {', '.join(valid_metric_types)}"}
             
             # index_type 검증
             valid_index_types = ["IVF_FLAT", "HNSW", "IVF_SQ8", "FLAT"]
             if index_type.upper() not in valid_index_types:
-                print(f"⚠️ [CREATE] 지원하지 않는 index_type: {index_type}, 기본값 IVF_FLAT 사용")
+                self.logger.warning(f"⚠️ [CREATE] 지원하지 않는 index_type: {index_type}, 기본값 IVF_FLAT 사용")
                 index_type = "IVF_FLAT"
             
             # index_params 기본값 설정
@@ -187,23 +194,23 @@ class MilvusService:
                 "params": index_params
             }
             
-            print(f"📋 [CREATE] 최종 인덱스 파라미터: {index_params_obj}")
+            self.logger.info(f"📋 [CREATE] 최종 인덱스 파라미터: {index_params_obj}")
             
             # 3단계: 컬렉션 생성과 인덱스 생성 - PyMilvus 2.6.0의 create_collection 사용
-            print(f"📋 [CREATE] 3단계: 컬렉션 생성 및 인덱스 생성")
+            self.logger.info(f"📋 [CREATE] 3단계: 컬렉션 생성 및 인덱스 생성")
             try:
                 # 환경변수에서 Milvus 연결 정보 가져오기
                 host = os.getenv('MILVUS_HOST', 'localhost')
                 port = os.getenv('MILVUS_PORT', '19530')
                 uri = f"http://{host}:{port}"
                 
-                print(f"📋 [CREATE] Milvus 연결 시도: {uri}")
+                self.logger.info(f"📋 [CREATE] Milvus 연결 시도: {uri}")
                 
                 from pymilvus import AsyncMilvusClient
                 
                 # AsyncMilvusClient 인스턴스 생성
                 async_client = AsyncMilvusClient(uri=uri, token="")
-                print(f"✅ [CREATE] AsyncMilvusClient 생성 성공")
+                self.logger.info(f"✅ [CREATE] AsyncMilvusClient 생성 성공")
                 
                 await async_client.create_collection(
                     collection_name=collection_name,
@@ -215,32 +222,38 @@ class MilvusService:
                     auto_id=False,  # 수동 ID 할당을 위해 False로 변경
                     index_params=index_params_obj  # 인덱스를 함께 생성
                 )
-                print(f"✅ [CREATE] 컬렉션 '{collection_name}' 생성 성공")
+                self.logger.info(f"✅ [CREATE] 컬렉션 '{collection_name}' 생성 성공")
                 
             except Exception as e:
-                print(f"❌ [CREATE] 컬렉션 생성 실패: {str(e)}")
-                print(f"❌ [CREATE] 에러 타입: {type(e).__name__}")
+                self.logger.error(f"❌ [CREATE] 컬렉션 생성 실패: {str(e)}")
+                self.logger.error(f"❌ [CREATE] 에러 타입: {type(e).__name__}")
                 import traceback
-                print(f"❌ [CREATE] 상세 에러: {traceback.format_exc()}")
+                self.logger.error(f"❌ [CREATE] 상세 에러: {traceback.format_exc()}")
                 return {"success": False, "message": f"컬렉션 생성 실패: {str(e)}"}
             
             # 4단계: 컬렉션 로드
-            print(f"📋 [CREATE] 4단계: 컬렉션 로드")
+            self.logger.info(f"📋 [CREATE] 4단계: 컬렉션 로드")
             try:
                 await async_client.load_collection(collection_name)
-                print(f"✅ [CREATE] 컬렉션 '{collection_name}' 로드 성공")
+                self.logger.info(f"✅ [CREATE] 컬렉션 '{collection_name}' 로드 성공")
             except Exception as e:
-                print(f"❌ [CREATE] 컬렉션 로드 실패: {str(e)}")
+                self.logger.error(f"❌ [CREATE] 컬렉션 로드 실패: {str(e)}")
                 # 로드 실패해도 컬렉션은 생성됨
-                print(f"⚠️ [CREATE] 컬렉션 로드 실패했지만 컬렉션은 생성됨")
+                self.logger.warning(f"⚠️ [CREATE] 컬렉션 로드 실패했지만 컬렉션은 생성됨")
             
-            print(f"🎉 [CREATE] 컬렉션 '{collection_name}' 생성 완료!")
+            # 사용자 행위 성공 로깅
+            self.user_logger.info(f"✅ [USER_SUCCESS] 컬렉션 생성 완료 - 컬렉션명: {collection_name}, 차원: {dimension}, 메트릭: {metric_type}")
+            
+            self.logger.info(f"🎉 [CREATE] 컬렉션 '{collection_name}' 생성 완료! - 차원: {dimension}, 메트릭: {metric_type}")
             return {"success": True, "message": f"컬렉션 '{collection_name}' 생성 완료 (metric_type: {metric_type.upper()}, index_type: {index_type.upper()})"}
             
         except Exception as e:
-            print(f"❌ [CREATE] 컬렉션 생성 중 예외 발생: {str(e)}")
+            # 사용자 행위 실패 로깅
+            self.user_logger.error(f"❌ [USER_FAILURE] 컬렉션 생성 실패 - 컬렉션명: {collection_name}, 오류: {str(e)}")
+            
+            self.logger.error(f"❌ [CREATE] 컬렉션 생성 중 예외 발생: {str(e)}")
             import traceback
-            print(f"❌ [CREATE] 상세 에러: {traceback.format_exc()}")
+            self.logger.error(f"❌ [CREATE] 상세 에러: {traceback.format_exc()}")
             return {"success": False, "message": f"컬렉션 생성 실패: {str(e)}"}
     
     async def delete_collection(self, collection_name: str) -> Dict[str, Any]:
@@ -254,17 +267,92 @@ class MilvusService:
         except Exception as e:
             return {"success": False, "message": f"컬렉션 삭제 실패: {e}"}
     
+    async def bulk_delete_collections(self, collection_names: List[str]) -> Dict[str, Any]:
+        """여러 컬렉션 일괄 삭제"""
+        try:
+            # 사용자 행위 로깅
+            self.user_logger.info(f"🗑️ [USER_ACTION] 컬렉션 일괄 삭제 요청 - 컬렉션들: {collection_names}")
+            
+            if not collection_names:
+                return {"success": False, "message": "삭제할 컬렉션이 지정되지 않았습니다."}
+            
+            # 중복 제거
+            unique_collections = list(set(collection_names))
+            
+            # 존재하지 않는 컬렉션 확인
+            existing_collections = []
+            non_existing_collections = []
+            
+            for collection_name in unique_collections:
+                if utility.has_collection(collection_name):
+                    existing_collections.append(collection_name)
+                else:
+                    non_existing_collections.append(collection_name)
+            
+            if not existing_collections:
+                return {"success": False, "message": "삭제할 수 있는 컬렉션이 없습니다."}
+            
+            # 컬렉션 삭제 실행
+            deleted_collections = []
+            failed_collections = []
+            
+            for collection_name in existing_collections:
+                try:
+                    utility.drop_collection(collection_name)
+                    deleted_collections.append(collection_name)
+                except Exception as e:
+                    failed_collections.append({"name": collection_name, "error": str(e)})
+            
+            # 결과 메시지 구성
+            message_parts = []
+            
+            if deleted_collections:
+                message_parts.append(f"성공적으로 삭제된 컬렉션: {', '.join(deleted_collections)}")
+            
+            if failed_collections:
+                failed_names = [f["name"] for f in failed_collections]
+                message_parts.append(f"삭제 실패한 컬렉션: {', '.join(failed_names)}")
+            
+            if non_existing_collections:
+                message_parts.append(f"존재하지 않는 컬렉션: {', '.join(non_existing_collections)}")
+            
+            # 성공 여부 판단 (하나라도 삭제 성공하면 성공)
+            success = len(deleted_collections) > 0
+            
+            # 사용자 행위 결과 로깅
+            if success:
+                self.user_logger.info(f"✅ [USER_SUCCESS] 컬렉션 일괄 삭제 완료 - 삭제된 컬렉션: {deleted_collections}, 실패: {len(failed_collections)}개")
+            else:
+                self.user_logger.warning(f"⚠️ [USER_PARTIAL] 컬렉션 일괄 삭제 부분 성공 - 삭제된 컬렉션: {deleted_collections}, 실패: {len(failed_collections)}개")
+            
+            return {
+                "success": success,
+                "message": " | ".join(message_parts),
+                "deleted_count": len(deleted_collections),
+                "failed_count": len(failed_collections),
+                "non_existing_count": len(non_existing_collections),
+                "deleted_collections": deleted_collections,
+                "failed_collections": failed_collections,
+                "non_existing_collections": non_existing_collections
+            }
+            
+        except Exception as e:
+            # 사용자 행위 실패 로깅
+            self.user_logger.error(f"❌ [USER_FAILURE] 컬렉션 일괄 삭제 실패 - 오류: {str(e)}")
+            
+            return {"success": False, "message": f"컬렉션 일괄 삭제 실패: {e}"}
+    
     async def get_collections(self) -> Dict[str, Any]:
         """모든 컬렉션 조회 - 상세 정보 포함"""
         try:
-            print(f"📋 [COLLECTIONS] 컬렉션 목록 조회 시작")
+            self.logger.info(f"📋 [COLLECTIONS] 컬렉션 목록 조회 시작")
             
             collection_names = utility.list_collections()
             if not collection_names:
-                print(f"📭 [COLLECTIONS] 생성된 컬렉션이 없음")
+                self.logger.info(f"📭 [COLLECTIONS] 생성된 컬렉션이 없음")
                 return {"success": True, "collections": []}
             
-            print(f"📋 [COLLECTIONS] 발견된 컬렉션: {collection_names}")
+            self.logger.info(f"📋 [COLLECTIONS] 발견된 컬렉션: {collection_names}")
             
             # 각 컬렉션의 상세 정보 수집
             collections_info = []
@@ -443,23 +531,26 @@ class MilvusService:
     async def insert_vectors(self, collection_name: str, data: List[Dict]) -> Dict[str, Any]:
         """벡터 데이터 삽입 - 시스템 필드만 사용 (id, vector)"""
         try:
-            print(f"📋 [INSERT] 벡터 삽입 시작 - 컬렉션: {collection_name}")
+            # 사용자 행위 로깅
+            self.user_logger.info(f"📥 [USER_ACTION] 벡터 삽입 요청 - 컬렉션: {collection_name}, 데이터 개수: {len(data)}")
+            
+            self.logger.info(f"📋 [INSERT] 벡터 삽입 시작 - 컬렉션: {collection_name}")
             
             # 1단계: 컬렉션 존재 확인
-            print(f"📋 [INSERT] 1단계: 컬렉션 존재 확인")
+            self.logger.info(f"📋 [INSERT] 1단계: 컬렉션 존재 확인")
             if not utility.has_collection(collection_name):
-                print(f"❌ [INSERT] 컬렉션 '{collection_name}'이 존재하지 않음")
+                self.logger.error(f"❌ [INSERT] 컬렉션 '{collection_name}'이 존재하지 않음")
                 return {"success": False, "message": f"컬렉션 '{collection_name}'이 존재하지 않습니다."}
-            print(f"✅ [INSERT] 컬렉션 '{collection_name}' 존재 확인됨")
+            self.logger.info(f"✅ [INSERT] 컬렉션 '{collection_name}' 존재 확인됨")
             
             # 2단계: 컬렉션 로드
-            print(f"📋 [INSERT] 2단계: 컬렉션 로드")
+            self.logger.info(f"📋 [INSERT] 2단계: 컬렉션 로드")
             collection = Collection(collection_name)
             collection.load()
-            print(f"✅ [INSERT] 컬렉션 로드 성공")
+            self.logger.info(f"✅ [INSERT] 컬렉션 로드 성공")
             
             # 3단계: 벡터 차원 확인
-            print(f"📋 [INSERT] 3단계: 벡터 차원 확인")
+            self.logger.info(f"📋 [INSERT] 3단계: 벡터 차원 확인")
             vector_dimension = None
             for field in collection.schema.fields:
                 if field.name == "vector":
@@ -467,24 +558,24 @@ class MilvusService:
                     break
             
             if vector_dimension is None:
-                print(f"❌ [INSERT] vector 필드의 차원을 찾을 수 없음")
+                self.logger.error(f"❌ [INSERT] vector 필드의 차원을 찾을 수 없음")
                 return {"success": False, "message": "vector 필드의 차원을 찾을 수 없습니다."}
             
-            print(f"✅ [INSERT] 컬렉션 '{collection_name}'의 vector 차원: {vector_dimension}")
+            self.logger.info(f"✅ [INSERT] 컬렉션 '{collection_name}'의 vector 차원: {vector_dimension}")
             
             # 4단계: 데이터 전처리 (시스템 필드만 사용)
-            print(f"📋 [INSERT] 4단계: 데이터 전처리 (시스템 필드만 사용)")
+            self.logger.info(f"📋 [INSERT] 4단계: 데이터 전처리 (시스템 필드만 사용)")
             
             processed_data = []
             
             for i, item in enumerate(data):
-                print(f"📋 [INSERT] 데이터 {i+1} 처리 중...")
+                self.logger.info(f"📋 [INSERT] 데이터 {i+1} 처리 중...")
                 
                 # text가 있으면 벡터로 변환
                 if "text" in item:
                     try:
                         vector = await self.text_to_vector(item["text"], target_dimension=vector_dimension)
-                        print(f"📋 [INSERT] 데이터 {i+1} 텍스트 -> 벡터 변환 성공 (차원: {len(vector)})")
+                        self.logger.info(f"📋 [INSERT] 데이터 {i+1} 텍스트 -> 벡터 변환 성공 (차원: {len(vector)})")
                         
                         # 시스템 필드만 포함 (vector만)
                         cleaned_item = {"vector": vector}
@@ -492,40 +583,40 @@ class MilvusService:
                         # 추가 메타데이터 필드들 로깅 (무시됨)
                         extra_fields = [key for key in item.keys() if key not in ["text", "vector"]]
                         if extra_fields:
-                            print(f"⚠️ [INSERT] 데이터 {i+1} 추가 메타데이터 필드 무시: {extra_fields}")
+                            self.logger.warning(f"⚠️ [INSERT] 데이터 {i+1} 추가 메타데이터 필드 무시: {extra_fields}")
                         
-                        print(f"📋 [INSERT] 데이터 {i+1} 최종 필드: {list(cleaned_item.keys())}")
+                        self.logger.info(f"📋 [INSERT] 데이터 {i+1} 최종 필드: {list(cleaned_item.keys())}")
                         processed_data.append(cleaned_item)
                         
                     except Exception as e:
-                        print(f"❌ [INSERT] 데이터 {i+1} 텍스트 -> 벡터 변환 실패: {str(e)}")
+                        self.logger.error(f"❌ [INSERT] 데이터 {i+1} 텍스트 -> 벡터 변환 실패: {str(e)}")
                         continue
                 
                 # vector가 직접 제공된 경우
                 elif "vector" in item:
                     vector = item["vector"]
                     if len(vector) != vector_dimension:
-                        print(f"❌ [INSERT] 데이터 {i+1} 벡터 차원 불일치: {len(vector)} != {vector_dimension}")
+                        self.logger.error(f"❌ [INSERT] 데이터 {i+1} 벡터 차원 불일치: {len(vector)} != {vector_dimension}")
                         continue
                     
                     cleaned_item = {"vector": vector}
-                    print(f"📋 [INSERT] 데이터 {i+1} 직접 벡터 사용 (차원: {len(vector)})")
+                    self.logger.info(f"📋 [INSERT] 데이터 {i+1} 직접 벡터 사용 (차원: {len(vector)})")
                     processed_data.append(cleaned_item)
                 
                 else:
-                    print(f"❌ [INSERT] 데이터 {i+1}에 text 또는 vector 필드가 없음")
+                    self.logger.error(f"❌ [INSERT] 데이터 {i+1}에 text 또는 vector 필드가 없음")
                     continue
             
             if not processed_data:
-                print(f"❌ [INSERT] 처리 가능한 데이터가 없음")
+                self.logger.error(f"❌ [INSERT] 처리 가능한 데이터가 없음")
                 return {"success": False, "message": "처리 가능한 데이터가 없습니다."}
             
             # 5단계: PyMilvus 형식으로 데이터 변환
-            print(f"📋 [INSERT] 5단계: PyMilvus 형식으로 데이터 변환")
+            self.logger.info(f"📋 [INSERT] 5단계: PyMilvus 형식으로 데이터 변환")
             
             # 현재 컬렉션의 벡터 개수를 확인하여 다음 ID 계산
             current_count = collection.num_entities
-            print(f"📋 [INSERT] 현재 컬렉션 벡터 개수: {current_count}")
+            self.logger.info(f"📋 [INSERT] 현재 컬렉션 벡터 개수: {current_count}")
             
             # ID와 vector 필드를 별도로 처리
             id_values = []
@@ -536,30 +627,40 @@ class MilvusService:
                 new_id = current_count + i
                 id_values.append(new_id)
                 vector_values.append(item["vector"])
-                print(f"📋 [INSERT] 데이터 {i+1}에 ID {new_id} 할당")
+                self.logger.info(f"📋 [INSERT] 데이터 {i+1}에 ID {new_id} 할당")
             
             # PyMilvus 형식으로 데이터 구성 [id, vector]
             insert_data = [id_values, vector_values]
             
-            print(f"📋 [INSERT] 삽입할 벡터 개수: {len(vector_values)}")
-            print(f"📋 [INSERT] 할당된 ID 범위: {id_values[0]} ~ {id_values[-1]}")
+            self.logger.info(f"📋 [INSERT] 삽입할 벡터 개수: {len(vector_values)}")
+            self.logger.info(f"📋 [INSERT] 할당된 ID 범위: {id_values[0]} ~ {id_values[-1]}")
             
             # 6단계: 데이터 삽입
-            print(f"📋 [INSERT] 6단계: 데이터 삽입")
+            self.logger.info(f"📋 [INSERT] 6단계: 데이터 삽입")
             collection.insert(insert_data)
             collection.flush()
             
-            print(f"✅ [INSERT] 벡터 삽입 완료: {len(processed_data)}개")
+            self.logger.info(f"✅ [INSERT] 벡터 삽입 완료: {len(processed_data)}개")
+            
+            # 사용자 행위 성공 로깅
+            self.user_logger.info(f"✅ [USER_SUCCESS] 벡터 삽입 완료 - 컬렉션: {collection_name}, 삽입된 벡터 개수: {len(processed_data)}")
+            
             return {"success": True, "message": f"{len(processed_data)}개의 벡터 삽입 완료"}
             
         except Exception as e:
-            print(f"❌ [INSERT] 벡터 삽입 중 예외 발생: {str(e)}")
+            # 사용자 행위 실패 로깅
+            self.user_logger.error(f"❌ [USER_FAILURE] 벡터 삽입 실패 - 컬렉션: {collection_name}, 오류: {str(e)}")
+            
+            self.logger.error(f"❌ [INSERT] 벡터 삽입 중 예외 발생: {str(e)}")
             return {"success": False, "message": f"벡터 삽입 실패: {str(e)}"}
     
     async def reset_collection_ids(self, collection_name: str) -> Dict[str, Any]:
         """컬렉션의 ID를 0부터 시작하도록 리셋 (주의: 모든 데이터 재삽입 필요)"""
         try:
-            print(f"🔄 [RESET] 컬렉션 ID 리셋 시작 - 컬렉션: {collection_name}")
+            # 사용자 행위 로깅
+            self.user_logger.info(f"🔄 [USER_ACTION] 컬렉션 ID 리셋 요청 - 컬렉션: {collection_name}")
+            
+            self.logger.info(f"🔄 [RESET] 컬렉션 ID 리셋 시작 - 컬렉션: {collection_name}")
             
             # 1단계: 컬렉션 존재 확인
             if not utility.has_collection(collection_name):
@@ -574,7 +675,7 @@ class MilvusService:
             if not results:
                 return {"success": False, "message": "리셋할 데이터가 없습니다."}
             
-            print(f"📋 [RESET] 백업할 데이터 개수: {len(results)}")
+            self.logger.info(f"📋 [RESET] 백업할 데이터 개수: {len(results)}")
             
             # 3단계: 기존 컬렉션 삭제
             utility.drop_collection(collection_name)
@@ -680,31 +781,34 @@ class MilvusService:
                            search_params: Dict, limit: int = 10) -> Dict[str, Any]:
         """벡터 검색"""
         try:
-            print(f"🔍 [SEARCH] 검색 시작 - 컬렉션: {collection_name}, 쿼리: '{query_text}', limit: {limit}")
+            # 사용자 행위 로깅
+            self.user_logger.info(f"🔍 [USER_ACTION] 벡터 검색 요청 - 컬렉션: {collection_name}, 쿼리: '{query_text}', limit: {limit}")
+            
+            self.logger.info(f"🔍 [SEARCH] 검색 시작 - 컬렉션: {collection_name}, 쿼리: '{query_text}', limit: {limit}")
             
             # 1단계: 컬렉션 존재 확인
-            print(f"📋 [SEARCH] 1단계: 컬렉션 존재 확인")
+            self.logger.info(f"📋 [SEARCH] 1단계: 컬렉션 존재 확인")
             if not utility.has_collection(collection_name):
-                print(f"❌ [SEARCH] 컬렉션 '{collection_name}'이 존재하지 않음")
+                self.logger.error(f"❌ [SEARCH] 컬렉션 '{collection_name}'이 존재하지 않음")
                 return {"success": False, "message": f"컬렉션 '{collection_name}'이 존재하지 않습니다."}
-            print(f"✅ [SEARCH] 컬렉션 '{collection_name}' 존재 확인됨")
+            self.logger.info(f"✅ [SEARCH] 컬렉션 '{collection_name}' 존재 확인됨")
             
             # 2단계: 컬렉션 객체 생성
-            print(f"📋 [SEARCH] 2단계: 컬렉션 객체 생성")
+            self.logger.info(f"📋 [SEARCH] 2단계: 컬렉션 객체 생성")
             try:
                 collection = Collection(collection_name)
-                print(f"✅ [SEARCH] 컬렉션 객체 생성 성공")
+                self.logger.info(f"✅ [SEARCH] 컬렉션 객체 생성 성공")
             except Exception as e:
-                print(f"❌ [SEARCH] 컬렉션 객체 생성 실패: {str(e)}")
+                self.logger.error(f"❌ [SEARCH] 컬렉션 객체 생성 실패: {str(e)}")
                 return {"success": False, "message": f"컬렉션 객체 생성 실패: {str(e)}"}
             
             # 3단계: 컬렉션 로드
-            print(f"📋 [SEARCH] 3단계: 컬렉션 로드")
+            self.logger.info(f"📋 [SEARCH] 3단계: 컬렉션 로드")
             try:
                 collection.load()
-                print(f"✅ [SEARCH] 컬렉션 로드 성공")
+                self.logger.info(f"✅ [SEARCH] 컬렉션 로드 성공")
             except Exception as e:
-                print(f"❌ [SEARCH] 컬렉션 로드 실패: {str(e)}")
+                self.logger.error(f"❌ [SEARCH] 컬렉션 로드 실패: {str(e)}")
                 return {"success": False, "message": f"컬렉션 로드 실패: {str(e)}"}
             
             # 4단계: 인덱스 정보 확인
@@ -824,15 +928,22 @@ class MilvusService:
                 print(f"❌ [SEARCH] 결과 포맷팅 실패: {str(e)}")
                 return {"success": False, "message": f"결과 포맷팅 실패: {str(e)}"}
             
-            print(f"🎉 [SEARCH] 검색 완료 성공!")
+            # 사용자 행위 성공 로깅
+            self.user_logger.info(f"✅ [USER_SUCCESS] 벡터 검색 완료 - 컬렉션: {collection_name}, 쿼리: '{query_text}', 결과 개수: {len(formatted_results)}")
+            
+            self.logger.info(f"🎉 [SEARCH] 검색 완료 성공! - 결과 개수: {len(formatted_results)}")
             return {"success": True, "results": formatted_results}
             
         except Exception as e:
             import traceback
             error_message = str(e)
             error_traceback = traceback.format_exc()
-            print(f"💥 [SEARCH] 예상치 못한 오류 발생: {error_message}")
-            print(f"💥 [SEARCH] 상세 에러: {error_traceback}")
+            
+            # 사용자 행위 실패 로깅
+            self.user_logger.error(f"❌ [USER_FAILURE] 벡터 검색 실패 - 컬렉션: {collection_name}, 쿼리: '{query_text}', 오류: {error_message}")
+            
+            self.logger.error(f"💥 [SEARCH] 예상치 못한 오류 발생: {error_message}")
+            self.logger.error(f"💥 [SEARCH] 상세 에러: {error_traceback}")
             
             if "metric type not match" in error_message.lower():
                 return {

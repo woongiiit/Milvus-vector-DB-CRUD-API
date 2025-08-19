@@ -31,6 +31,10 @@ class DeleteCollectionRequest(BaseModel):
     collection_name: str
 
 
+class BulkDeleteCollectionsRequest(BaseModel):
+    collection_names: List[str]
+
+
 @router.post("/create")
 async def create_collection(request: CreateCollectionRequest):
     """컬렉션 생성 API"""
@@ -67,6 +71,23 @@ async def delete_collection(request: DeleteCollectionRequest):
             raise HTTPException(status_code=400, detail=result["message"])
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"컬렉션 삭제 중 오류 발생: {str(e)}")
+
+
+@router.post("/bulk_delete")
+async def bulk_delete_collections(request: BulkDeleteCollectionsRequest):
+    """여러 컬렉션 일괄 삭제 API"""
+    try:
+        milvus_service = get_milvus_service()
+        result = await milvus_service.bulk_delete_collections(
+            collection_names=request.collection_names
+        )
+        
+        if result["success"]:
+            return {"status": "success", "message": result["message"]}
+        else:
+            raise HTTPException(status_code=400, detail=result["message"])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"컬렉션 일괄 삭제 중 오류 발생: {str(e)}")
 
 
 @router.get("/collections")

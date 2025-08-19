@@ -41,6 +41,7 @@ docker-compose up -d
 - **Transformers**: 4.35.2
 - **PyTorch**: 2.1.1
 - **Docker**: 컨테이너화된 배포
+- **로깅**: Python logging 모듈 (한국 시간대 지원)
 
 ## 프로젝트 구조
 
@@ -59,7 +60,8 @@ Milvus-vector-DB-CRUD-API/
 │   └── vector_router.py
 └── Services/              # 비즈니스 로직
     ├── __init__.py
-    └── milvus_service.py
+    ├── milvus_service.py
+    └── logger_config.py   # 로거 설정
 ```
 
 ## API 엔드포인트
@@ -264,6 +266,7 @@ curl -X POST "http://localhost:8000/vector/delete" \
 4. **인덱스**: 컬렉션 생성 시 자동으로 인덱스가 생성됩니다.
 5. **Metric Type 일치**: 컬렉션 생성 시 설정한 거리 계산 방식과 검색 시 사용하는 방식이 일치해야 합니다.
 6. **에러 처리**: Metric type 불일치 시 명확한 에러 메시지와 함께 컬렉션 정보를 제공합니다.
+7. **로깅**: 모든 로그는 한국 시간대(KST)로 기록되며, `logs/` 디렉토리에 저장됩니다.
 
 ## 개발 환경
 
@@ -279,6 +282,92 @@ curl -X POST "http://localhost:8000/vector/delete" \
 3. 변경사항을 커밋합니다 (`git commit -m 'Add some amazing feature'`)
 4. 브랜치에 Push합니다 (`git push origin feature/amazing-feature`)
 5. Pull Request를 생성합니다
+
+## 로깅 시스템
+
+### 로거 설정
+이 프로젝트는 Python의 `logging` 모듈을 사용하여 체계적인 로깅을 제공합니다.
+
+#### 주요 기능
+- **한국 시간대 지원**: 모든 로그는 한국 표준시(KST)로 기록됩니다.
+- **파일 및 콘솔 출력**: 로그는 콘솔과 파일에 동시에 출력됩니다.
+- **일별 로테이션**: 로그 파일은 매일 자정에 새로운 파일로 생성되며, 30일간 보관됩니다.
+- **로그 레벨**: INFO, WARNING, ERROR 등 다양한 로그 레벨을 지원합니다.
+- **사용자 행위 추적**: 사용자의 모든 요청과 결과를 별도로 기록합니다.
+
+#### 로그 파일 위치
+```
+logs/
+├── milvus_service.log          # 시스템 동작 로그 (현재)
+├── milvus_service.log.2025-08-18  # 시스템 동작 로그 (어제)
+├── user_activity.log           # 사용자 행위 로그 (현재)
+├── user_activity.log.2025-08-18  # 사용자 행위 로그 (어제)
+└── ...
+```
+
+#### 로그 포맷
+```
+2025-08-19 15:09:36 대한민국 표준시 [INFO] MilvusService: 📋 [CREATE] 컬렉션 생성 시작
+2025-08-19 15:09:36 대한민국 표준시 [WARNING] MilvusService: ⚠️ 경고 메시지
+2025-08-19 15:09:36 대한민국 표준시 [ERROR] MilvusService: ❌ 오류 메시지
+```
+
+#### 사용자 행위 추적 로그
+- **👤 [USER_ACTION]**: 사용자 요청 시작
+- **✅ [USER_SUCCESS]**: 사용자 요청 성공
+- **❌ [USER_FAILURE]**: 사용자 요청 실패
+- **⚠️ [USER_PARTIAL]**: 사용자 요청 부분 성공
+
+#### 시스템 동작 로그
+- **📋 [CREATE]**: 컬렉션 생성 과정
+- **🔍 [SEARCH]**: 벡터 검색 과정
+- **📥 [INSERT]**: 벡터 삽입 과정
+- **🗑️ [DELETE]**: 컬렉션 삭제 과정
+- **📊 [VECTOR]**: 벡터 처리 과정
+
+#### 로거 사용법
+```python
+from Services.logger_config import get_milvus_logger, get_user_activity_logger
+
+# 시스템 동작 로거
+logger = get_milvus_logger()
+logger.info("정보 메시지")
+logger.warning("경고 메시지")
+logger.error("오류 메시지")
+
+# 사용자 행위 추적 로거
+user_logger = get_user_activity_logger()
+user_logger.info("사용자 행위 기록")
+```
+
+#### 로그 예시
+```
+# 사용자 행위 로그
+2025-08-19 15:09:36 KST [INFO] UserActivity: 👤 [USER_ACTION] 벡터 검색 요청 - 컬렉션: test_collection, 쿼리: '안녕하세요', limit: 10
+2025-08-19 15:09:37 KST [INFO] UserActivity: ✅ [USER_SUCCESS] 벡터 검색 완료 - 컬렉션: test_collection, 쿼리: '안녕하세요', 결과 개수: 5
+
+# 시스템 동작 로그
+2025-08-19 15:09:36 KST [INFO] MilvusService: 🔍 [SEARCH] 검색 시작 - 컬렉션: test_collection, 쿼리: '안녕하세요', limit: 10
+2025-08-19 15:09:37 KST [INFO] MilvusService: 🎉 [SEARCH] 검색 완료 성공! - 결과 개수: 5
+```
+
+#### 한국 시간대 유틸리티
+```python
+from Services.logger_config import get_korea_time, format_korea_time
+
+# 현재 한국 시간 가져오기
+korea_time = get_korea_time()
+
+# 한국 시간을 포맷팅하여 문자열로 변환
+formatted_time = format_korea_time()
+```
+
+### 로그 설정 커스터마이징
+`Services/logger_config.py` 파일에서 로거 설정을 수정할 수 있습니다:
+
+- **로그 레벨 변경**: `setup_logger()` 함수의 `level` 매개변수 수정
+- **로그 보관 기간**: `backupCount` 매개변수 수정 (기본값: 30일)
+- **로그 포맷 변경**: `formatter` 설정 수정
 
 ## 라이선스
 

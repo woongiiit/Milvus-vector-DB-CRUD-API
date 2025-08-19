@@ -50,6 +50,7 @@ volumes/
 
 # Logs
 *.log
+logs/
 
 # Environment variables
 .env

@@ -6,4 +6,5 @@ transformers==4.35.2
 torch==2.1.1
 numpy==1.24.3
 pydantic==2.5.0
-python-multipart==0.0.6 
+python-multipart==0.0.6
+pytz==2023.3 
